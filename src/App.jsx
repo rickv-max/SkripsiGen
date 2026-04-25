@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, ExternalLink, RefreshCw, Sparkles, Search, ChevronLeft, ShieldCheck } from 'lucide-react';
+import { Send, Bot, User, ExternalLink, RefreshCw, Sparkles, ChevronLeft, ShieldCheck, Copy, Check } from 'lucide-react';
 
 const apiKey = import.meta.env.VITE_GR0Q_API_KEY;
 
@@ -14,7 +14,11 @@ export default function App() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // State untuk melacak status salin tombol utama dan kotak DOI
   const [copiedId, setCopiedId] = useState(null);
+  const [copiedDoi, setCopiedDoi] = useState(null);
+  
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -138,11 +142,23 @@ export default function App() {
     document.body.removeChild(textArea);
   };
 
+  // Fungsi khusus untuk menyalin teks DOI saja
+  const handleCopyDoi = (e, doi) => {
+    e.preventDefault();
+    const textArea = document.createElement("textarea");
+    textArea.value = doi;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    setCopiedDoi(doi);
+    setTimeout(() => setCopiedDoi(null), 2000);
+    document.body.removeChild(textArea);
+  };
+
   return (
-    // Penyesuaian container agar responsif dari mobile (max-w-md) ke desktop (max-w-3xl/5xl)
     <div className="flex flex-col h-screen w-full max-w-md md:max-w-3xl lg:max-w-5xl mx-auto bg-[#F1F5F9] font-sans border-x border-slate-300 shadow-2xl transition-all duration-300">
       
-      {/* Header Ramping & Solid - Tambahan padding desktop (md:px-6 md:py-4) */}
+      {/* Header Ramping & Solid */}
       <div className="bg-white border-b-2 border-black p-3 md:px-6 md:py-4 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2 md:gap-3">
           <ChevronLeft size={18} className="text-slate-400 md:hidden" />
@@ -160,12 +176,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* Area Chat - Jarak antar elemen diperbesar di desktop */}
+      {/* Area Chat */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             
-            {/* Lebar maksimal bubble dinamis. Khusus jurnal lebih lebar di desktop agar gridnya bagus */}
             <div className={`flex w-full ${msg.type === 'journals' ? 'max-w-[95%] md:max-w-[90%]' : 'max-w-[88%] md:max-w-[75%] lg:max-w-[65%]'} items-start gap-2 md:gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
               
               <div className={`w-8 h-8 md:w-10 md:h-10 border border-black rounded-lg flex-shrink-0 flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
@@ -188,7 +203,6 @@ export default function App() {
                 )}
 
                 {msg.type === 'journals' && (
-                  // Grid aktif di desktop: kolom menjadi 2
                   <div className="mt-3 md:mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 w-full">
                     {msg.journals.map((j, index) => (
                       <div key={j.id} className="bg-white border-2 border-black rounded-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] p-3 md:p-4 group transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col h-full">
@@ -209,9 +223,20 @@ export default function App() {
                            <span className="flex-shrink-0">{j.year}</span>
                         </div>
                         
-                        <div className="bg-slate-50 border border-black rounded-lg p-2 md:p-2.5 mb-3 flex items-center justify-between">
-                           <span className="text-[10px] md:text-[11px] font-black text-slate-500 truncate">{j.id}</span>
-                           <Search size={12} className="text-slate-300 flex-shrink-0 ml-2" />
+                        {/* Box DOI yang interaktif dan bisa disalin */}
+                        <div 
+                          onClick={(e) => handleCopyDoi(e, j.id)}
+                          className="group/doi bg-slate-50 hover:bg-[#FDE047]/20 border border-black rounded-lg p-2 md:p-2.5 mb-3 flex items-center justify-between cursor-pointer transition-colors"
+                          title="Klik untuk menyalin DOI"
+                        >
+                           <span className="text-[10px] md:text-[11px] font-black text-slate-500 group-hover/doi:text-black truncate transition-colors">
+                             {j.id}
+                           </span>
+                           {copiedDoi === j.id ? (
+                             <Check size={14} className="text-green-600 flex-shrink-0 ml-2" />
+                           ) : (
+                             <Copy size={14} className="text-slate-400 group-hover/doi:text-black flex-shrink-0 ml-2 transition-colors" />
+                           )}
                         </div>
 
                         <button 
@@ -243,7 +268,7 @@ export default function App() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Ramping - Tambahan porsi klik/tap area lebih nyaman di desktop */}
+      {/* Input Ramping */}
       <div className="p-3 md:p-5 bg-white border-t-2 border-black sticky bottom-0 z-10">
         <form onSubmit={handleSendMessage} className="flex items-center gap-2 md:gap-3">
           <input
@@ -266,3 +291,4 @@ export default function App() {
     </div>
   );
 }
+
