@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, ExternalLink, RefreshCw, Sparkles, Search, ChevronLeft, ShieldCheck } from 'lucide-react';
 
-const apikey = import.meta.env.VITE_GR0Q_API_KEY;
+const apiKey = import.meta.env.VITE_GR0Q_API_KEY;
 
 export default function App() {
   const [messages, setMessages] = useState([
@@ -139,45 +139,48 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto bg-[#F1F5F9] font-sans border-x border-slate-300 shadow-2xl">
+    // Penyesuaian container agar responsif dari mobile (max-w-md) ke desktop (max-w-3xl/5xl)
+    <div className="flex flex-col h-screen w-full max-w-md md:max-w-3xl lg:max-w-5xl mx-auto bg-[#F1F5F9] font-sans border-x border-slate-300 shadow-2xl transition-all duration-300">
       
-      {/* Header Ramping & Solid */}
-      <div className="bg-white border-b-2 border-black p-3 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-          <ChevronLeft size={18} className="text-slate-400" />
+      {/* Header Ramping & Solid - Tambahan padding desktop (md:px-6 md:py-4) */}
+      <div className="bg-white border-b-2 border-black p-3 md:px-6 md:py-4 flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-2 md:gap-3">
+          <ChevronLeft size={18} className="text-slate-400 md:hidden" />
           <div className="flex items-center gap-1">
-            <span className="font-black text-xl italic tracking-tighter text-black">FL</span>
-            <div className="bg-[#FDE047] p-1 rounded border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
-               <Sparkles size={12} className="fill-black" />
+            <span className="font-black text-xl md:text-2xl italic tracking-tighter text-black">FL</span>
+            <div className="bg-[#FDE047] p-1 md:p-1.5 rounded border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+               <Sparkles size={12} className="fill-black md:w-4 md:h-4" />
             </div>
-            <span className="font-black text-xl italic tracking-tighter text-black">SH</span>
+            <span className="font-black text-xl md:text-2xl italic tracking-tighter text-black">SH</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-full">
           <div className="bg-green-500 w-2 h-2 rounded-full animate-pulse"></div>
-          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Accuracy ON</span>
+          <span className="text-[9px] md:text-[11px] font-black uppercase tracking-widest text-slate-500">Accuracy ON</span>
         </div>
       </div>
 
-      {/* Area Chat */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Area Chat - Jarak antar elemen diperbesar di desktop */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`flex max-w-[88%] items-start gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+            
+            {/* Lebar maksimal bubble dinamis. Khusus jurnal lebih lebar di desktop agar gridnya bagus */}
+            <div className={`flex w-full ${msg.type === 'journals' ? 'max-w-[95%] md:max-w-[90%]' : 'max-w-[88%] md:max-w-[75%] lg:max-w-[65%]'} items-start gap-2 md:gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
               
-              <div className={`w-8 h-8 border border-black rounded-lg flex-shrink-0 flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
+              <div className={`w-8 h-8 md:w-10 md:h-10 border border-black rounded-lg flex-shrink-0 flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
                 msg.sender === 'user' ? 'bg-white' : 'bg-[#FDE047]'
               }`}>
-                {msg.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
+                {msg.sender === 'user' ? <User size={16} className="md:w-5 md:h-5" /> : <Bot size={16} className="md:w-5 md:h-5" />}
               </div>
 
-              <div className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
+              <div className={`flex flex-col w-full ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
                 {msg.content && (
-                  <div className={`p-3 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[13px] font-bold leading-snug ${
+                  <div className={`p-3 md:p-4 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[13px] md:text-[15px] font-bold leading-snug w-fit ${
                     msg.sender === 'user' ? 'bg-slate-200 text-black rounded-tr-none' : 'bg-white text-black rounded-tl-none'
                   }`}>
                     {msg.content.split('\n').map((line, i) => (
-                      <p key={i} className={i > 0 ? "mt-1" : ""}>
+                      <p key={i} className={i > 0 ? "mt-1.5" : ""}>
                         {line.split('**').map((part, j) => j % 2 === 1 ? <span key={j} className="text-indigo-600 underline">{part}</span> : part)}
                       </p>
                     ))}
@@ -185,39 +188,40 @@ export default function App() {
                 )}
 
                 {msg.type === 'journals' && (
-                  <div className="mt-3 space-y-3 w-full">
+                  // Grid aktif di desktop: kolom menjadi 2
+                  <div className="mt-3 md:mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 w-full">
                     {msg.journals.map((j, index) => (
-                      <div key={j.id} className="bg-white border-2 border-black rounded-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] p-3 group transition-all">
-                        <div className="flex justify-between items-center mb-1.5">
-                           <div className="flex items-center gap-1 bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter italic">
-                              <ShieldCheck size={8} /> Verified
+                      <div key={j.id} className="bg-white border-2 border-black rounded-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] p-3 md:p-4 group transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col h-full">
+                        <div className="flex justify-between items-center mb-2 md:mb-3">
+                           <div className="flex items-center gap-1.5 bg-black text-white px-2 py-1 rounded text-[8px] md:text-[9px] font-black uppercase tracking-tighter italic">
+                              <ShieldCheck size={10} /> Verified
                            </div>
-                           <span className="text-[9px] font-black text-slate-300">#{index + 1}</span>
+                           <span className="text-[10px] md:text-[11px] font-black text-slate-300">#{index + 1}</span>
                         </div>
                         
-                        <h3 className="font-black text-[13px] leading-tight mb-2 text-black line-clamp-2 uppercase italic tracking-tight">
+                        <h3 className="flex-grow font-black text-[13px] md:text-[14px] leading-tight mb-3 text-black line-clamp-3 uppercase italic tracking-tight">
                           {j.title}
                         </h3>
                         
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 mb-3 uppercase truncate italic">
-                           <span className="text-black">{j.authors}</span>
-                           <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                           <span>{j.year}</span>
+                        <div className="flex items-center gap-2 text-[10px] md:text-[11px] font-bold text-slate-400 mb-3 uppercase truncate italic">
+                           <span className="text-black truncate max-w-[60%]">{j.authors}</span>
+                           <span className="w-1 h-1 bg-slate-300 rounded-full flex-shrink-0"></span>
+                           <span className="flex-shrink-0">{j.year}</span>
                         </div>
                         
-                        <div className="bg-slate-50 border border-black rounded-lg p-2 mb-3 flex items-center justify-between">
-                           <span className="text-[10px] font-black text-slate-500 truncate">{j.id}</span>
-                           <Search size={10} className="text-slate-300" />
+                        <div className="bg-slate-50 border border-black rounded-lg p-2 md:p-2.5 mb-3 flex items-center justify-between">
+                           <span className="text-[10px] md:text-[11px] font-black text-slate-500 truncate">{j.id}</span>
+                           <Search size={12} className="text-slate-300 flex-shrink-0 ml-2" />
                         </div>
 
                         <button 
                           onClick={() => handleAction(j)}
-                          className={`w-full border-2 border-black py-2.5 rounded-lg font-black uppercase text-[10px] flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] ${
+                          className={`w-full border-2 border-black py-2.5 md:py-3 rounded-lg font-black uppercase text-[10px] md:text-[11px] flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] ${
                             copiedId === j.id ? 'bg-green-400 text-black' : 'bg-[#FDE047] text-black hover:bg-yellow-300'
                           }`}
                         >
                           {copiedId === j.id ? 'BERHASIL DISALIN!' : 'TARIK DATA'}
-                          <ExternalLink size={12} strokeWidth={3} />
+                          <ExternalLink size={14} strokeWidth={3} />
                         </button>
                       </div>
                     ))}
@@ -230,32 +234,32 @@ export default function App() {
 
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-white border border-black p-2 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2">
-              <RefreshCw size={12} className="animate-spin text-black" />
-              <span className="font-black uppercase text-[9px] tracking-widest italic">AI Verifying Accuracy...</span>
+            <div className="bg-white border border-black p-2 md:p-3 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 md:gap-3">
+              <RefreshCw size={14} className="animate-spin text-black" />
+              <span className="font-black uppercase text-[9px] md:text-[11px] tracking-widest italic">AI Verifying Accuracy...</span>
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Ramping */}
-      <div className="p-3 bg-white border-t-2 border-black sticky bottom-0">
-        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+      {/* Input Ramping - Tambahan porsi klik/tap area lebih nyaman di desktop */}
+      <div className="p-3 md:p-5 bg-white border-t-2 border-black sticky bottom-0 z-10">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-2 md:gap-3">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="TOPIK SPESIFIK JURNAL ID..."
-            className="flex-1 bg-white border-2 border-black rounded-xl p-3 font-black text-[12px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-[#FDE047]/5 uppercase placeholder:text-slate-300"
+            className="flex-1 bg-white border-2 border-black rounded-xl p-3 md:p-4 font-black text-[12px] md:text-[14px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-[#FDE047]/5 uppercase placeholder:text-slate-300 transition-colors"
             disabled={isLoading}
           />
           <button 
             type="submit" 
             disabled={!inputValue.trim() || isLoading}
-            className="bg-[#FDE047] border-2 border-black p-3 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] disabled:bg-slate-100 disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0"
+            className="bg-[#FDE047] border-2 border-black p-3 md:p-4 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:shadow-none active:translate-x-[2px] active:translate-y-[2px] disabled:bg-slate-100 disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0 hover:bg-yellow-300"
           >
-            <Send size={18} strokeWidth={3} className="text-black" />
+            <Send size={20} strokeWidth={3} className="text-black" />
           </button>
         </form>
       </div>
