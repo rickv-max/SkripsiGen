@@ -1,7 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, ExternalLink, RefreshCw, Sparkles, ChevronLeft, ShieldCheck, Copy, Check, Instagram } from 'lucide-react';
+import { Send, Bot, User, ExternalLink, RefreshCw, Sparkles, ChevronLeft, ShieldCheck, Copy, Check } from 'lucide-react';
 
 const apiKey = import.meta.env.VITE_GR0Q_API_KEY;
+
+// Komponen SVG Instagram Custom agar tidak error import
+const InstagramIcon = ({ size = 24, strokeWidth = 2, className = "" }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={strokeWidth}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5"></rect>
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"></line>
+  </svg>
+);
 
 export default function App() {
   const [messages, setMessages] = useState([
@@ -288,7 +308,7 @@ export default function App() {
           </button>
         </form>
 
-        {/* Link Instagram */}
+        {/* Link Instagram dengan SVG Custom */}
         <div className="mt-3 flex justify-center items-center">
           <a 
             href="https://www.instagram.com/rickv4_?igsh=N3JqcG84NG9obnli&utm_source=qr" 
@@ -296,7 +316,7 @@ export default function App() {
             rel="noopener noreferrer" 
             className="flex items-center gap-1.5 text-slate-400 hover:text-black transition-colors text-[10px] md:text-[11px] font-black uppercase tracking-widest"
           >
-            <Instagram size={14} strokeWidth={2.5} />
+            <InstagramIcon size={14} strokeWidth={2.5} />
             <span>@rickv4_</span>
           </a>
         </div>
@@ -304,5 +324,6 @@ export default function App() {
     </div>
   );
 }
+
 
 
