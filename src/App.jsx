@@ -15,6 +15,7 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
+  // State untuk melacak status salin tombol utama dan kotak DOI
   const [copiedId, setCopiedId] = useState(null);
   const [copiedDoi, setCopiedDoi] = useState(null);
   
@@ -28,6 +29,7 @@ export default function App() {
     scrollToBottom();
   }, [messages, isLoading]);
 
+  // Fungsi AI untuk memverifikasi relevansi jurnal
   const verifyRelevanceWithAI = async (userQuery, results) => {
     try {
       const response = await fetch(
@@ -49,12 +51,13 @@ export default function App() {
       const relevantIndexes = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
       return results.filter((_, index) => relevantIndexes.includes(index));
     } catch (error) {
-      return results.slice(0, 15);
+      return results.slice(0, 15); // Fallback ke top 15 jika AI gagal
     }
   };
 
   const fetchJournalsWithAccuracy = async (userQuery) => {
     try {
+      // Step 1: Broad search
       const url = `https://api.crossref.org/works?query=${encodeURIComponent(userQuery + " Indonesia")}&rows=40`;
       const res = await fetch(url);
       const data = await res.json();
@@ -77,6 +80,7 @@ export default function App() {
         }
       }
 
+      // Step 2: AI Re-ranking untuk akurasi
       if (rawResults.length > 5) {
         return await verifyRelevanceWithAI(userQuery, rawResults);
       }
@@ -138,6 +142,7 @@ export default function App() {
     document.body.removeChild(textArea);
   };
 
+  // Fungsi khusus untuk menyalin teks DOI saja
   const handleCopyDoi = (e, doi) => {
     e.preventDefault();
     const textArea = document.createElement("textarea");
@@ -153,7 +158,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-full max-w-md md:max-w-3xl lg:max-w-5xl mx-auto bg-[#F1F5F9] font-sans border-x border-slate-300 shadow-2xl transition-all duration-300">
       
-      {/* Header */}
+      {/* Header Ramping & Solid */}
       <div className="bg-white border-b-2 border-black p-3 md:px-6 md:py-4 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2 md:gap-3">
           <ChevronLeft size={18} className="text-slate-400 md:hidden" />
@@ -175,12 +180,15 @@ export default function App() {
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            
             <div className={`flex w-full ${msg.type === 'journals' ? 'max-w-[95%] md:max-w-[90%]' : 'max-w-[88%] md:max-w-[75%] lg:max-w-[65%]'} items-start gap-2 md:gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+              
               <div className={`w-8 h-8 md:w-10 md:h-10 border border-black rounded-lg flex-shrink-0 flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
                 msg.sender === 'user' ? 'bg-white' : 'bg-[#FDE047]'
               }`}>
                 {msg.sender === 'user' ? <User size={16} className="md:w-5 md:h-5" /> : <Bot size={16} className="md:w-5 md:h-5" />}
               </div>
+
               <div className={`flex flex-col w-full ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
                 {msg.content && (
                   <div className={`p-3 md:p-4 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[13px] md:text-[15px] font-bold leading-snug w-fit ${
@@ -193,6 +201,7 @@ export default function App() {
                     ))}
                   </div>
                 )}
+
                 {msg.type === 'journals' && (
                   <div className="mt-3 md:mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 w-full">
                     {msg.journals.map((j, index) => (
@@ -203,14 +212,18 @@ export default function App() {
                            </div>
                            <span className="text-[10px] md:text-[11px] font-black text-slate-300">#{index + 1}</span>
                         </div>
+                        
                         <h3 className="flex-grow font-black text-[13px] md:text-[14px] leading-tight mb-3 text-black line-clamp-3 uppercase italic tracking-tight">
                           {j.title}
                         </h3>
+                        
                         <div className="flex items-center gap-2 text-[10px] md:text-[11px] font-bold text-slate-400 mb-3 uppercase truncate italic">
                            <span className="text-black truncate max-w-[60%]">{j.authors}</span>
                            <span className="w-1 h-1 bg-slate-300 rounded-full flex-shrink-0"></span>
                            <span className="flex-shrink-0">{j.year}</span>
                         </div>
+                        
+                        {/* Box DOI yang interaktif dan bisa disalin */}
                         <div 
                           onClick={(e) => handleCopyDoi(e, j.id)}
                           className="group/doi bg-slate-50 hover:bg-[#FDE047]/20 border border-black rounded-lg p-2 md:p-2.5 mb-3 flex items-center justify-between cursor-pointer transition-colors"
@@ -225,6 +238,7 @@ export default function App() {
                              <Copy size={14} className="text-slate-400 group-hover/doi:text-black flex-shrink-0 ml-2 transition-colors" />
                            )}
                         </div>
+
                         <button 
                           onClick={() => handleAction(j)}
                           className={`w-full border-2 border-black py-2.5 md:py-3 rounded-lg font-black uppercase text-[10px] md:text-[11px] flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] ${
@@ -242,6 +256,7 @@ export default function App() {
             </div>
           </div>
         ))}
+
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-white border border-black p-2 md:p-3 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 md:gap-3">
@@ -253,42 +268,41 @@ export default function App() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Ramping & Social Link */}
-      <div className="bg-white border-t-2 border-black sticky bottom-0 z-10">
-        <div className="p-3 md:p-5 pb-1 md:pb-2">
-          <form onSubmit={handleSendMessage} className="flex items-center gap-2 md:gap-3">
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="TOPIK SPESIFIK JURNAL ID..."
-              className="flex-1 bg-white border-2 border-black rounded-xl p-3 md:p-4 font-black text-[12px] md:text-[14px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-[#FDE047]/5 uppercase placeholder:text-slate-300 transition-colors"
-              disabled={isLoading}
-            />
-            <button 
-              type="submit" 
-              disabled={!inputValue.trim() || isLoading}
-              className="bg-[#FDE047] border-2 border-black p-3 md:p-4 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:shadow-none active:translate-x-[2px] active:translate-y-[2px] disabled:bg-slate-100 disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0 hover:bg-yellow-300"
-            >
-              <Send size={20} strokeWidth={3} className="text-black" />
-            </button>
-          </form>
-        </div>
-        
-        {/* Instagram Logo Section */}
-        <div className="flex justify-center pb-3 md:pb-4">
+      {/* Input Ramping dan Link Instagram */}
+      <div className="p-3 md:p-5 bg-white border-t-2 border-black sticky bottom-0 z-10">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-2 md:gap-3">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder="TOPIK SPESIFIK JURNAL ID..."
+            className="flex-1 bg-white border-2 border-black rounded-xl p-3 md:p-4 font-black text-[12px] md:text-[14px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-[#FDE047]/5 uppercase placeholder:text-slate-300 transition-colors"
+            disabled={isLoading}
+          />
+          <button 
+            type="submit" 
+            disabled={!inputValue.trim() || isLoading}
+            className="bg-[#FDE047] border-2 border-black p-3 md:p-4 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:shadow-none active:translate-x-[2px] active:translate-y-[2px] disabled:bg-slate-100 disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0 hover:bg-yellow-300"
+          >
+            <Send size={20} strokeWidth={3} className="text-black" />
+          </button>
+        </form>
+
+        {/* Link Instagram */}
+        <div className="mt-3 flex justify-center items-center">
           <a 
             href="https://www.instagram.com/rickv4_?igsh=N3JqcG84NG9obnli&utm_source=qr" 
             target="_blank" 
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 bg-white border-2 border-black px-4 py-1.5 rounded-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-slate-50 transition-all hover:-translate-y-0.5 active:shadow-none active:translate-y-0.5"
+            rel="noopener noreferrer" 
+            className="flex items-center gap-1.5 text-slate-400 hover:text-black transition-colors text-[10px] md:text-[11px] font-black uppercase tracking-widest"
           >
-            <Instagram size={16} className="text-black" strokeWidth={2.5} />
-            <span className="text-[10px] md:text-[11px] font-black uppercase italic tracking-tighter">rickv4_</span>
+            <Instagram size={14} strokeWidth={2.5} />
+            <span>@rickv4_</span>
           </a>
         </div>
       </div>
     </div>
   );
 }
+
 
