@@ -1,1209 +1,326 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Bot, User, ExternalLink, RefreshCw, Sparkles, ChevronLeft, ShieldCheck, Copy, Check } from 'lucide-react';
+
+const apiKey = import.meta.env.VITE_GR0Q_API_KEY;
+
+// Komponen SVG Instagram Custom agar tidak error import
+const InstagramIcon = ({ size = 24, strokeWidth = 2, className = "" }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={strokeWidth}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5"></rect>
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"></line>
+  </svg>
+);
 
 export default function App() {
-  // Mode State (Diatur oleh Bottom Nav)
-  const [inputMode, setInputMode] = useState("doi"); // "doi" | "url" | "manual" | "batch"
-
-  // Form States
-  const [doiInput, setDoiInput] = useState("");
-  const [urlInput, setUrlInput] = useState("");
-  const [batchInput, setBatchInput] = useState("");
-  const [kotaInput, setKotaInput] = useState("");
+  const [messages, setMessages] = useState([
+    {
+      id: 1,
+      sender: 'bot',
+      type: 'text',
+      content: 'Halo! Saya **Flash Assistant**.\n\nSistem akurasi tinggi aktif. Masukkan topik spesifik, saya akan memverifikasi setiap jurnal sebelum menampilkannya.'
+    }
+  ]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
-  // Manual States
-  const [mAuthor, setMAuthor] = useState("");
-  const [mTitle, setMTitle] = useState("");
-  const [mJournal, setMJournal] = useState("");
-  const [mYear, setMYear] = useState("");
-  const [mVolume, setMVolume] = useState("");
-  const [mIssue, setMIssue] = useState("");
-  const [mPage, setMPage] = useState("");
-  const [mPublisher, setMPublisher] = useState("");
-
-  // App States
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [metadata, setMetadata] = useState(null); // Untuk Single Mode
-  const [batchResults, setBatchResults] = useState([]); // Untuk Batch Mode
-  
-  // Single Results
-  const [footnoteResult, setFootnoteResult] = useState("");
-  const [dafpusResult, setDafpusResult] = useState("");
-  
-  // Unified Copy State (menyimpan ID dari elemen yang di-copy)
+  // State untuk melacak status salin tombol utama dan kotak DOI
   const [copiedId, setCopiedId] = useState(null);
+  const [copiedDoi, setCopiedDoi] = useState(null);
+  
+  const messagesEndRef = useRef(null);
 
-  // Clear error & results saat ganti tab
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   useEffect(() => {
-    setError("");
-    setMetadata(null);
-    setBatchResults([]);
-    setFootnoteResult("");
-    setDafpusResult("");
-    setCopiedId(null);
-  }, [inputMode]);
+    scrollToBottom();
+  }, [messages, isLoading]);
 
-  const cleanDOI = (input) => input.trim().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, "");
-
-  const capitalize = (str) => {
-    if (!str || typeof str !== "string") return "";
-    return str.toLowerCase().replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1));
-  };
-
-  // --- LOGIC CROSSREF & OJS (BUG FIX: 1-Kata & Pembalikan Nama DOI) ---
-  const formatAuthorsFootnote = (authors) => {
-    if (!authors || !authors.length) return "Penulis Tidak Diketahui";
-    let given = authors[0].given || "";
-    let family = authors[0].family || "";
-    
-    if (!given && family.includes(" ")) {
-      const parts = family.split(" ").filter(Boolean);
-      if (parts.length > 1) {
-        family = parts.pop();
-        given = parts.join(" ");
-      }
-    }
-    
-    family = capitalize(family);
-    given = capitalize(given);
-
-    const firstAuthor = given ? `${given} ${family}`.trim() : family.trim();
-    if (authors.length > 1) return `${firstAuthor} <i>et al.</i>`;
-    return firstAuthor;
-  };
-
-  const formatAuthorsDafpus = (authors) => {
-    if (!authors || !authors.length) return "Penulis Tidak Diketahui";
-    let given = authors[0].given || "";
-    let family = authors[0].family || "";
-    
-    if (!given && family.includes(" ")) {
-      const parts = family.split(" ").filter(Boolean);
-      if (parts.length > 1) {
-        family = parts.pop();
-        given = parts.join(" ");
-      }
-    }
-
-    family = capitalize(family);
-    given = capitalize(given);
-    
-    let firstAuthor = given ? `${family}, ${given}` : family;
-    if (authors.length > 1) return `${firstAuthor} <i>et al.</i>`;
-    return firstAuthor;
-  };
-
-  // FETCH CORE LOGIC
-  const processDOI = async (rawDoi) => {
-    const cleanedDoi = cleanDOI(rawDoi); // Ekstrak DOI murni terlebih dahulu
-    const res = await fetch(`https://api.crossref.org/works/${encodeURIComponent(cleanedDoi)}`);
-    if (!res.ok) throw new Error("DOI tidak ditemukan.");
-    const data = await res.json();
-    const item = data.message;
-    
-    const yearObj = item["published-print"] || item.issued;
-    const year = yearObj && yearObj["date-parts"] ? yearObj["date-parts"][0][0] : "Tahun";
-    const monthNum = yearObj?.["date-parts"]?.[0]?.[1] ?? null;
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
-    const monthStr = monthNum ? monthNames[monthNum - 1] : "";
-
-    const kotaScraped = item["publisher-location"] || "";
-
-    return {
-      authorFootnote: formatAuthorsFootnote(item.author),
-      authorDafpus: formatAuthorsDafpus(item.author),
-      year, month: monthStr,
-      title: item.title?.[0] ?? "Judul Artikel",
-      journal: item["container-title"]?.[0] ?? "Nama Jurnal",
-      page: item.page || "", volume: item.volume || "", issue: item.issue || "", publisher: item.publisher || "",
-      kotaScraped,
-      doiUrl: `https://doi.org/${cleanedDoi}` // Simpan DOI Url untuk dimunculkan di footnote
-    };
-  };
-
-  const processURL = async (rawUrl) => {
-    let targetUrl = rawUrl.trim();
-    const ojsMatch = targetUrl.match(/(.*\/article\/(?:view|download)\/\d+)/i);
-    if (ojsMatch) {
-      targetUrl = ojsMatch[1].replace('/download/', '/view/');
-    }
-
-    let htmlContent = "";
+  // Fungsi AI untuk memverifikasi relevansi jurnal
+  const verifyRelevanceWithAI = async (userQuery, results) => {
     try {
-      const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`);
-      if (!res.ok) throw new Error("Proxy 1 gagal");
-      const data = await res.json(); htmlContent = data.contents;
-    } catch (err1) {
-      const res2 = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`);
-      if (!res2.ok) throw new Error("Gagal mengakses URL.");
-      htmlContent = await res2.text();
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ 
+              parts: [{ 
+                text: `Topik User: "${userQuery}"\n\nDaftar Jurnal:\n${results.map((r, i) => `${i}. ${r.title}`).join('\n')}\n\nTugas: Pilih maksimal 15 jurnal yang BENAR-BENAR relevan dengan topik dalam Bahasa Indonesia. Balas hanya dengan array index JSON, contoh: [0, 2, 5]` 
+              }] 
+            }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        }
+      );
+      const data = await response.json();
+      const relevantIndexes = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
+      return results.filter((_, index) => relevantIndexes.includes(index));
+    } catch (error) {
+      return results.slice(0, 15); // Fallback ke top 15 jika AI gagal
     }
-    if (!htmlContent) throw new Error("Konten tidak ditemukan.");
+  };
 
-    const parser = new DOMParser(); const doc = parser.parseFromString(htmlContent, "text/html");
-    const getMeta = (name) => {
-      const el = doc.querySelector(`meta[name="${name}"]`) || doc.querySelector(`meta[property="${name}"]`);
-      return el ? el.getAttribute("content") : "";
-    };
-
-    const title = getMeta("citation_title") || doc.title || "Judul Tidak Diketahui";
-    const authorNodes = doc.querySelectorAll('meta[name="citation_author"]');
-    let authors = [];
-    authorNodes.forEach(node => authors.push(node.getAttribute("content")));
-
-    let fn = "Penulis Tidak Diketahui", dp = "Penulis Tidak Diketahui";
-    if (authors.length > 0) {
-      let firstAuthor = authors[0].trim();
-      let family = "", given = "";
+  const fetchJournalsWithAccuracy = async (userQuery) => {
+    try {
+      // Step 1: Broad search
+      const url = `https://api.crossref.org/works?query=${encodeURIComponent(userQuery + " Indonesia")}&rows=40`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const items = data.message?.items || [];
       
-      if (firstAuthor.includes(",")) {
-        const parts = firstAuthor.split(",");
-        family = parts[0].trim(); 
-        given = parts[1] ? parts[1].trim() : "";
-      } else {
-        const parts = firstAuthor.split(" ").filter(Boolean);
-        if (parts.length === 1) {
-          family = parts[0];
-          given = "";
-        } else {
-          family = parts.pop();
-          given = parts.join(" ");
+      const rawResults = [];
+      const seen = new Set();
+
+      for (const item of items) {
+        const title = item.title?.[0] || '';
+        if (item.DOI && title && !seen.has(item.DOI)) {
+          seen.add(item.DOI);
+          rawResults.push({
+            id: item.DOI,
+            title: title,
+            authors: item.author ? item.author.map(a => a.family || '').slice(0, 1).join('') : 'Anonim',
+            year: item.issued?.['date-parts']?.[0]?.[0] || '-',
+            publisher: item['container-title']?.[0] || 'Journal'
+          });
         }
       }
-      
-      fn = given ? `${capitalize(given)} ${capitalize(family)}` : capitalize(family);
-      dp = given ? `${capitalize(family)}, ${capitalize(given)}` : capitalize(family);
-      if (authors.length > 1) { fn += " <i>et al.</i>"; dp += " <i>et al.</i>"; }
-    }
 
-    const dateStr = getMeta("citation_date") || getMeta("citation_publication_date") || "";
-    const year = dateStr ? dateStr.split("/")[0].split("-")[0] : "Tahun";
-    const page = getMeta("citation_firstpage") ? (getMeta("citation_lastpage") ? `${getMeta("citation_firstpage")}-${getMeta("citation_lastpage")}` : getMeta("citation_firstpage")) : "";
-
-    return {
-      authorFootnote: fn, authorDafpus: dp, year, month: "", title,
-      journal: getMeta("citation_journal_title") || "", page, volume: getMeta("citation_volume") || "",
-      issue: getMeta("citation_issue") || "", publisher: getMeta("citation_publisher") || "",
-      kotaScraped: ""
-    };
-  };
-
-  // BUILDERS
-  const buildFootnote = (m, kotaManual) => {
-    const finalKota = kotaManual.trim() ? kotaManual : (m.kotaScraped || "");
-    const kotaTxt = capitalize(finalKota) ? `${capitalize(finalKota)}, ` : "";
-    const pageTxt = m.page ? `hal. ${m.page}.` : "";
-    
-    let baseFootnote = `${m.authorFootnote} (${m.year}) ${capitalize(m.title)}. ${capitalize(m.journal)}. ${kotaTxt}${pageTxt}`;
-    
-    // Pastikan tidak ada spasi sisa jika kota/page kosong dan pastikan berakhiran titik
-    baseFootnote = baseFootnote.trim();
-    if (!baseFootnote.endsWith(".")) {
-      baseFootnote += ".";
-    }
-
-    // Khusus Mode DOI: Tambahkan https://doi.org/... di akhir
-    if (m.doiUrl) {
-      baseFootnote += ` ${m.doiUrl}`;
-    }
-
-    return baseFootnote;
-  };
-
-  const buildDafpus = (m, kotaManual) => {
-    const finalKota = kotaManual.trim() ? kotaManual : (m.kotaScraped || "");
-    const parts = [];
-    if (m.journal) parts.push(capitalize(m.journal));
-    if (m.publisher) parts.push(capitalize(m.publisher));
-    if (finalKota) parts.push(capitalize(finalKota));
-
-    let volIssue = "";
-    if (m.volume) volIssue += `Vol. ${m.volume}`;
-    if (m.issue) volIssue += volIssue ? ` No. ${m.issue}` : `No. ${m.issue}`;
-    if (volIssue) parts.push(volIssue);
-
-    let datePart = "";
-    if (m.month) datePart += `${m.month} `;
-    datePart += m.year;
-    parts.push(datePart);
-
-    const journalMeta = parts.join(", ") + ".";
-    const authorDot = m.authorDafpus.endsWith("</i>") || m.authorDafpus.endsWith(".") ? "" : ".";
-
-    return `${m.authorDafpus}${authorDot} (${m.year}) "${capitalize(m.title)}". ${journalMeta}`;
-  };
-
-  // --- HANDLERS SINGLE MODE ---
-  const fetchDOI = async () => {
-    if (!doiInput) return;
-    setLoading(true); setError(""); setMetadata(null);
-    try {
-      const meta = await processDOI(doiInput);
-      setMetadata(meta); 
-      setFootnoteResult(buildFootnote(meta, kotaInput));
-      setDafpusResult(buildDafpus(meta, kotaInput));
-    } catch (e) {
-      if (e.message === "Failed to fetch") setError("Koneksi terputus. Matikan Adblock/VPN sebentar ya.");
-      else setError(e.message);
-    } finally { setLoading(false); }
-  };
-
-  const fetchURL = async () => {
-    if (!urlInput) return;
-    setLoading(true); setError(""); setMetadata(null);
-    try {
-      const meta = await processURL(urlInput);
-      if (meta.authorFootnote === "Penulis Tidak Diketahui") {
-         setError("Info: Web/Link ini gagal menyediakan metadata standar, hasilnya mungkin kosong/tidak akurat.");
+      // Step 2: AI Re-ranking untuk akurasi
+      if (rawResults.length > 5) {
+        return await verifyRelevanceWithAI(userQuery, rawResults);
       }
-      setMetadata(meta);
-      setFootnoteResult(buildFootnote(meta, kotaInput));
-      setDafpusResult(buildDafpus(meta, kotaInput));
-    } catch (e) {
-      if (e.message === "Failed to fetch") setError("Koneksi gagal. Coba matikan Adblock/VPN.");
-      else setError(e.message || "Terjadi kesalahan saat memproses URL.");
-    } finally { setLoading(false); }
-  };
-
-  // --- HANDLER MANUAL ---
-  const parseManualAuthor = (authorStr) => {
-    if (!authorStr.trim()) return { fn: "Penulis Tidak Diketahui", dp: "Penulis Tidak Diketahui" };
-    const authors = authorStr.split(",").map((a) => a.trim()).filter(Boolean);
-    if (authors.length === 0) return { fn: "Penulis Tidak Diketahui", dp: "Penulis Tidak Diketahui" };
-
-    const firstAuthor = authors[0];
-    const parts = firstAuthor.split(" ").filter(Boolean);
-    
-    let family = "", given = "";
-    if (parts.length === 1) {
-      family = parts[0];
-      given = "";
-    } else {
-      family = parts.pop();
-      given = parts.join(" ");
-    }
-
-    let fn = given ? `${capitalize(given)} ${capitalize(family)}` : capitalize(family);
-    let dp = given ? `${capitalize(family)}, ${capitalize(given)}` : capitalize(family);
-
-    if (authors.length > 1) {
-      fn += " <i>et al.</i>";
-      dp += " <i>et al.</i>";
-    }
-    return { fn, dp };
-  };
-
-  const handleGenerateManual = () => {
-    setError("");
-    if (!mAuthor || !mTitle || !mYear) return setError("Nama Penulis, Judul, dan Tahun wajib diisi bos!");
-    const { fn, dp } = parseManualAuthor(mAuthor);
-    const meta = {
-      authorFootnote: fn, authorDafpus: dp, title: mTitle, journal: mJournal, year: mYear,
-      month: "", volume: mVolume, issue: mIssue, page: mPage, publisher: mPublisher, kotaScraped: ""
-    };
-    setMetadata(meta);
-    setFootnoteResult(buildFootnote(meta, kotaInput));
-    setDafpusResult(buildDafpus(meta, kotaInput));
-  };
-
-  // --- HANDLER BATCH (ALL IN ONE) ---
-  const handleBatchGenerate = async () => {
-    if (!batchInput.trim()) return setError("Masukkan minimal 1 link atau DOI.");
-    setLoading(true); setError(""); setBatchResults([]); setMetadata(null);
-
-    const lines = batchInput.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-    const results = [];
-
-    for (const line of lines) {
-      const isDoi = (line.includes("10.") && !line.includes("http")) || line.includes("doi.org");
       
-      try {
-        let meta;
-        if (isDoi) meta = await processDOI(line);
-        else meta = await processURL(line);
-        
-        results.push({ status: "success", line, meta });
-      } catch (err) {
-        results.push({ status: "error", line, error: err.message });
+      return rawResults.slice(0, 15);
+    } catch (error) {
+      return [];
+    }
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+
+    const userText = inputValue.trim();
+    setInputValue('');
+    setMessages(prev => [...prev, { id: Date.now(), sender: 'user', type: 'text', content: userText }]);
+    setIsLoading(true);
+
+    try {
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1, sender: 'bot', type: 'text', 
+        content: `🔍 Memverifikasi akurasi data untuk: **"${userText}"**...`
+      }]);
+
+      const journals = await fetchJournalsWithAccuracy(userText);
+
+      if (journals.length > 0) {
+        setMessages(prev => [...prev, {
+          id: Date.now() + 2,
+          sender: 'bot',
+          type: 'journals',
+          content: `Hasil terverifikasi untuk **"${userText}"**:`,
+          journals: journals
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now() + 2, sender: 'bot', type: 'text', 
+          content: "Tidak ditemukan jurnal yang cukup relevan. Coba kata kunci lain." 
+        }]);
       }
-    }
-
-    setBatchResults(results);
-    setLoading(false);
-  };
-
-
-  // --- COPY FUNCTION (Menerima parameter copyId agar tombol yang aktif hanya 1 yang diklik) ---
-  const handleCopy = (htmlString, targetCopyId) => {
-    if (!htmlString) return;
-    const plainText = htmlString.replace(/<br\s*[\/]?>/gi, "\n").replace(/<[^>]+>/g, "");
-    
-    const div = document.createElement("div");
-    div.innerHTML = htmlString; div.style.position = "fixed"; div.style.left = "-9999px";
-    document.body.appendChild(div);
-    const selection = window.getSelection(); const range = document.createRange();
-    range.selectNodeContents(div); selection.removeAllRanges(); selection.addRange(range);
-    
-    let success = false;
-    try { success = document.execCommand("copy"); } catch (err) {}
-    selection.removeAllRanges(); document.body.removeChild(div);
-    
-    if (!success) {
-      const textarea = document.createElement("textarea");
-      textarea.value = plainText; textarea.style.position = "fixed"; textarea.style.left = "-9999px";
-      document.body.appendChild(textarea); textarea.select();
-      try { success = document.execCommand("copy"); } catch(e){}
-      document.body.removeChild(textarea);
-    }
-    
-    if (success) {
-      setCopiedId(targetCopyId);
-      setTimeout(() => setCopiedId(null), 2000);
+    } catch (error) {
+      setMessages(prev => [...prev, { id: Date.now() + 1, sender: 'bot', type: 'text', content: "Sistem sibuk." }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // --- ICONS ---
-  const SearchIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" height="18" width="18"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
-  const LinkIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" height="18" width="18"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>;
-  const EditIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" height="18" width="18"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
-  const ListIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" height="18" width="18"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>;
-  const MenuIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2.5" height="24" width="24"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>;
-  const BoltIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" height="24" width="24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>;
-  const CheckIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" height="16" width="16"><polyline points="20 6 9 17 4 12"></polyline></svg>;
-  const CopyIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" height="18" width="18"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>;
-  const PlayCircleIcon = () => <svg viewBox="0 0 24 24" fill="none" height="20" width="20"><circle cx="12" cy="12" r="10" fill="white" /><polygon points="10 8 16 12 10 16" fill="var(--c-dark)" /></svg>;
-  const WarningIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" height="16" width="16"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
-  const StarIcon = () => <svg viewBox="0 0 24 24" fill="var(--c-yellow)" stroke="currentColor" strokeWidth="2" height="20" width="20"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>;
+  const handleAction = (journal) => {
+    const doi = journal.id;
+    const textArea = document.createElement("textarea");
+    textArea.value = doi;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    setCopiedId(journal.id);
+    setTimeout(() => setCopiedId(null), 2000);
+    window.open('https://flash-sitasi.vercel.app', '_blank');
+    document.body.removeChild(textArea);
+  };
 
-  // Variabel untuk me-render data batch
-  const batchSuccesses = batchResults.filter(r => r.status === 'success');
-  const batchErrors = batchResults.filter(r => r.status === 'error');
-  // Daftar Pustaka disorting sesuai Abjad
-  const sortedBatchDafpus = [...batchSuccesses].sort((a, b) => a.meta.authorDafpus.localeCompare(b.meta.authorDafpus));
+  // Fungsi khusus untuk menyalin teks DOI saja
+  const handleCopyDoi = (e, doi) => {
+    e.preventDefault();
+    const textArea = document.createElement("textarea");
+    textArea.value = doi;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    setCopiedDoi(doi);
+    setTimeout(() => setCopiedDoi(null), 2000);
+    document.body.removeChild(textArea);
+  };
 
   return (
-    <div className="neo-app">
+    <div className="flex flex-col h-screen w-full max-w-md md:max-w-3xl lg:max-w-5xl mx-auto bg-[#F1F5F9] font-sans border-x border-slate-300 shadow-2xl transition-all duration-300">
       
-      {/* Top Header (White & Sticky) */}
-      <header className="neo-header">
-        <div className="neo-logo">
-          F l <span className="neo-logo-icon"><BoltIcon /></span> s h
-        </div>
-        <div className="neo-menu-btn"><MenuIcon /></div>
-      </header>
-
-      {/* Hero Section (Dark Blue + Pattern) */}
-      <section className="neo-hero">
-        <div className="neo-hero-content">
-          <div className="neo-badge">GENERATE SITASI OTOMATIS</div>
-          <h1>
-            Ubah <span className="neo-highlight">DOI</span> atau URL ke<br />
-            Format <span className="neo-highlight">Sitasi Jurnal</span>
-          </h1>
-          <p>Transformasi referensi jurnalmu menjadi format Catatan Kaki & Daftar Pustaka dengan cepat dan akurat.</p>
-          
-          <button className="neo-btn-primary neo-btn-large" onClick={() => window.scrollTo({top: 450, behavior: 'smooth'})}>
-            Mulai Buat Sitasi Sekarang
-          </button>
-        </div>
-      </section>
-
-      {/* Main Content Area */}
-      <section className="neo-content-area">
-        <div className="neo-container">
-          
-          {/* Input Card */}
-          <div className="neo-card">
-            <div className="neo-card-header">
-              <div className="neo-circle"></div>
-              {inputMode === "doi" && "INPUT DATA: NOMOR DOI"}
-              {inputMode === "url" && "INPUT DATA: LINK URL"}
-              {inputMode === "manual" && "INPUT DATA: KETIK MANUAL"}
-              {inputMode === "batch" && "INPUT DATA: ALL IN ONE (BATCH)"}
+      {/* Header Ramping & Solid */}
+      <div className="bg-white border-b-2 border-black p-3 md:px-6 md:py-4 flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-2 md:gap-3">
+          <ChevronLeft size={18} className="text-slate-400 md:hidden" />
+          <div className="flex items-center gap-1">
+            <span className="font-black text-xl md:text-2xl italic tracking-tighter text-black">FL</span>
+            <div className="bg-[#FDE047] p-1 md:p-1.5 rounded border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+               <Sparkles size={12} className="fill-black md:w-4 md:h-4" />
             </div>
+            <span className="font-black text-xl md:text-2xl italic tracking-tighter text-black">SH</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-full">
+          <div className="bg-green-500 w-2 h-2 rounded-full animate-pulse"></div>
+          <span className="text-[9px] md:text-[11px] font-black uppercase tracking-widest text-slate-500">Accuracy ON</span>
+        </div>
+      </div>
+
+      {/* Area Chat */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             
-            <div className="neo-card-body">
-              {/* DOI MODE */}
-              {inputMode === "doi" && (
-                <div className="neo-fade-in">
-                  <div className="neo-form-group">
-                    <label className="neo-label">Masukkan Nomor DOI</label>
-                    <input type="text" className="neo-input" value={doiInput} onChange={(e)=>setDoiInput(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&fetchDOI()} placeholder="10.1038/s41586..." />
-                  </div>
-                  <div className="neo-form-group">
-                    <label className="neo-label">Kota Terbit (Opsional - Otomatis jika ada)</label>
-                    <input type="text" className="neo-input" value={kotaInput} onChange={(e) => setKotaInput(e.target.value)} placeholder="Contoh: Jakarta" />
-                  </div>
-                  <button className="neo-btn-primary neo-w-full" onClick={fetchDOI} disabled={loading || !doiInput}>
-                    {loading ? "MEMPROSES..." : "TARIK DATA"}
-                  </button>
-                </div>
-              )}
-
-              {/* URL MODE */}
-              {inputMode === "url" && (
-                <div className="neo-fade-in">
-                  <div className="neo-form-group">
-                    <label className="neo-label">Masukkan Link Jurnal (Support PDF URL)</label>
-                    <input type="text" className="neo-input" value={urlInput} onChange={(e)=>setUrlInput(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&fetchURL()} placeholder="https://jurnal.kampus.ac.id/.../pdf" />
-                  </div>
-                  <div className="neo-form-group">
-                    <label className="neo-label">Kota Terbit (Opsional)</label>
-                    <input type="text" className="neo-input" value={kotaInput} onChange={(e) => setKotaInput(e.target.value)} placeholder="Ketik manual di sini (Misal: Malang)" />
-                  </div>
-                  <button className="neo-btn-primary neo-w-full" onClick={fetchURL} disabled={loading || !urlInput}>
-                    {loading ? "MEMPROSES..." : "TARIK DATA"}
-                  </button>
-                </div>
-              )}
-
-              {/* MANUAL MODE */}
-              {inputMode === "manual" && (
-                <div className="neo-fade-in">
-                  <div className="neo-grid">
-                    <div className="neo-form-group neo-span-2">
-                      <label className="neo-label">Nama Penulis *</label>
-                      <input type="text" className="neo-input" value={mAuthor} onChange={(e)=>setMAuthor(e.target.value)} placeholder="Misal: Ricky, Budi Santoso" />
-                    </div>
-                    <div className="neo-form-group neo-span-2">
-                      <label className="neo-label">Judul Artikel *</label>
-                      <input type="text" className="neo-input" value={mTitle} onChange={(e)=>setMTitle(e.target.value)} placeholder="Pengaruh Teknologi..." />
-                    </div>
-                    <div className="neo-form-group">
-                      <label className="neo-label">Nama Jurnal</label>
-                      <input type="text" className="neo-input" value={mJournal} onChange={(e)=>setMJournal(e.target.value)} />
-                    </div>
-                    <div className="neo-form-group">
-                      <label className="neo-label">Tahun *</label>
-                      <input type="text" className="neo-input" value={mYear} onChange={(e)=>setMYear(e.target.value)} />
-                    </div>
-                    <div className="neo-form-group">
-                      <label className="neo-label">Volume</label>
-                      <input type="text" className="neo-input" value={mVolume} onChange={(e)=>setMVolume(e.target.value)} />
-                    </div>
-                    <div className="neo-form-group">
-                      <label className="neo-label">Isu / Nomor</label>
-                      <input type="text" className="neo-input" value={mIssue} onChange={(e)=>setMIssue(e.target.value)} />
-                    </div>
-                    <div className="neo-form-group">
-                      <label className="neo-label">Halaman</label>
-                      <input type="text" className="neo-input" value={mPage} onChange={(e)=>setMPage(e.target.value)} placeholder="15-25" />
-                    </div>
-                    <div className="neo-form-group">
-                      <label className="neo-label">Kota Terbit</label>
-                      <input type="text" className="neo-input" value={kotaInput} onChange={(e) => setKotaInput(e.target.value)} />
-                    </div>
-                  </div>
-                  <button className="neo-btn-primary neo-w-full" onClick={handleGenerateManual}>
-                    GENERATE SITASI
-                  </button>
-                </div>
-              )}
-
-              {/* BATCH MODE (ALL IN ONE) */}
-              {inputMode === "batch" && (
-                <div className="neo-fade-in">
-                  <div className="neo-form-group">
-                    <label className="neo-label">Paste Banyak URL/PDF/DOI (1 baris = 1 Link)</label>
-                    <textarea 
-                      className="neo-input" 
-                      rows="6" 
-                      style={{ resize: "vertical", minHeight: "120px" }}
-                      value={batchInput} 
-                      onChange={(e)=>setBatchInput(e.target.value)} 
-                      placeholder="https://jurnal.kampus.ac.id/...&#10;10.1038/s41586...&#10;https://jurnal.../download/65/pdf" 
-                    />
-                  </div>
-                  <div className="neo-form-group">
-                    <label className="neo-label">Kota Terbit Pukul Rata (Jika DOI tidak memilikinya)</label>
-                    <input type="text" className="neo-input" value={kotaInput} onChange={(e) => setKotaInput(e.target.value)} placeholder="Contoh: Jakarta" />
-                  </div>
-                  <button className="neo-btn-primary neo-w-full" onClick={handleBatchGenerate} disabled={loading || !batchInput}>
-                    {loading ? "MEMPROSES BATCH..." : "GENERATE SEKALIGUS"}
-                  </button>
-                </div>
-              )}
-
-              {/* Error Box (Untuk Mode Single) */}
-              {error && <div className="neo-error-box">{error}</div>}
-            </div>
-          </div>
-
-          {/* Results Card (Single & Manual Mode) */}
-          {metadata && inputMode !== "batch" && (
-            <div className="neo-card neo-animate-up">
-              <div className="neo-card-header neo-bg-teal">
-                <div className="neo-circle"></div> HASIL GENERATE
+            <div className={`flex w-full ${msg.type === 'journals' ? 'max-w-[95%] md:max-w-[90%]' : 'max-w-[88%] md:max-w-[75%] lg:max-w-[65%]'} items-start gap-2 md:gap-3 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+              
+              <div className={`w-8 h-8 md:w-10 md:h-10 border border-black rounded-lg flex-shrink-0 flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ${
+                msg.sender === 'user' ? 'bg-white' : 'bg-[#FDE047]'
+              }`}>
+                {msg.sender === 'user' ? <User size={16} className="md:w-5 md:h-5" /> : <Bot size={16} className="md:w-5 md:h-5" />}
               </div>
-              <div className="neo-card-body">
-                
-                <div className="neo-result-box">
-                  <div className="neo-result-header">
-                    <span>CATATAN KAKI (FOOTNOTE)</span>
-                    <button className="neo-btn-secondary neo-btn-sm" onClick={() => handleCopy(footnoteResult, "single-fn")}>
-                      {copiedId === "single-fn" ? <CheckIcon /> : <CopyIcon />} {copiedId === "single-fn" ? "DISALIN" : "COPY"}
-                    </button>
+
+              <div className={`flex flex-col w-full ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                {msg.content && (
+                  <div className={`p-3 md:p-4 border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-[13px] md:text-[15px] font-bold leading-snug w-fit ${
+                    msg.sender === 'user' ? 'bg-slate-200 text-black rounded-tr-none' : 'bg-white text-black rounded-tl-none'
+                  }`}>
+                    {msg.content.split('\n').map((line, i) => (
+                      <p key={i} className={i > 0 ? "mt-1.5" : ""}>
+                        {line.split('**').map((part, j) => j % 2 === 1 ? <span key={j} className="text-indigo-600 underline">{part}</span> : part)}
+                      </p>
+                    ))}
                   </div>
-                  <div className="neo-result-content" dangerouslySetInnerHTML={{ __html: footnoteResult }} />
-                </div>
-
-                <div className="neo-result-box neo-mt-4">
-                  <div className="neo-result-header">
-                    <span>DAFTAR PUSTAKA</span>
-                    <button className="neo-btn-secondary neo-btn-sm" onClick={() => handleCopy(dafpusResult, "single-dp")}>
-                      {copiedId === "single-dp" ? <CheckIcon /> : <CopyIcon />} {copiedId === "single-dp" ? "DISALIN" : "COPY"}
-                    </button>
-                  </div>
-                  <div className="neo-result-content" dangerouslySetInnerHTML={{ __html: dafpusResult }} />
-                </div>
-
-                <div className="neo-info-box neo-mt-4">
-                  <strong>META:</strong> {metadata.authorFootnote.replace(/<[^>]+>/g, "")} | {metadata.year}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Results Card (Batch Mode) */}
-          {batchResults.length > 0 && inputMode === "batch" && (
-            <div className="neo-card neo-animate-up">
-              <div className="neo-card-header neo-bg-teal">
-                <div className="neo-circle"></div> HASIL BATCH ({batchSuccesses.length} SUKSES)
-              </div>
-              <div className="neo-card-body">
-                
-                {batchSuccesses.length > 0 && (
-                  <>
-                    <h4 className="neo-section-title">📌 CATATAN KAKI (FOOTNOTE)</h4>
-                    {batchSuccesses.map((r, index) => {
-                      const content = buildFootnote(r.meta, kotaInput);
-                      const copyId = `batch-fn-${index}`;
-                      return (
-                        <div className="neo-result-box neo-mb-3" key={copyId}>
-                          <div className="neo-result-header">
-                            <span className="neo-truncate" title={r.line}>{r.line}</span>
-                            <button className="neo-btn-secondary neo-btn-sm" onClick={() => handleCopy(content, copyId)}>
-                              {copiedId === copyId ? <CheckIcon /> : <CopyIcon />} {copiedId === copyId ? "DISALIN" : "COPY"}
-                            </button>
-                          </div>
-                          <div className="neo-result-content" dangerouslySetInnerHTML={{ __html: content }} />
-                        </div>
-                      )
-                    })}
-
-                    <h4 className="neo-section-title" style={{ marginTop: '2rem' }}>📚 DAFTAR PUSTAKA (URUT ABJAD)</h4>
-                    {sortedBatchDafpus.map((r, index) => {
-                      const content = buildDafpus(r.meta, kotaInput);
-                      const copyId = `batch-dp-${index}`;
-                      return (
-                        <div className="neo-result-box neo-mb-3" key={copyId}>
-                          <div className="neo-result-header">
-                            <span className="neo-truncate" title={r.line}>{r.line}</span>
-                            <button className="neo-btn-secondary neo-btn-sm" onClick={() => handleCopy(content, copyId)}>
-                              {copiedId === copyId ? <CheckIcon /> : <CopyIcon />} {copiedId === copyId ? "DISALIN" : "COPY"}
-                            </button>
-                          </div>
-                          <div className="neo-result-content" dangerouslySetInnerHTML={{ __html: content }} />
-                        </div>
-                      )
-                    })}
-                  </>
                 )}
 
-                {/* Tampilkan yang error kalau ada */}
-                {batchErrors.length > 0 && (
-                  <div className="neo-error-list neo-mt-4">
-                    <strong><WarningIcon/> Gagal Memproses:</strong>
-                    <ul>
-                      {batchErrors.map((err, i) => (
-                        <li key={i}>
-                          <span className="neo-truncate">{err.line}</span> - <i>{err.error}</i>
-                        </li>
-                      ))}
-                    </ul>
+                {msg.type === 'journals' && (
+                  <div className="mt-3 md:mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 w-full">
+                    {msg.journals.map((j, index) => (
+                      <div key={j.id} className="bg-white border-2 border-black rounded-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] p-3 md:p-4 group transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col h-full">
+                        <div className="flex justify-between items-center mb-2 md:mb-3">
+                           <div className="flex items-center gap-1.5 bg-black text-white px-2 py-1 rounded text-[8px] md:text-[9px] font-black uppercase tracking-tighter italic">
+                              <ShieldCheck size={10} /> Verified
+                           </div>
+                           <span className="text-[10px] md:text-[11px] font-black text-slate-300">#{index + 1}</span>
+                        </div>
+                        
+                        <h3 className="flex-grow font-black text-[13px] md:text-[14px] leading-tight mb-3 text-black line-clamp-3 uppercase italic tracking-tight">
+                          {j.title}
+                        </h3>
+                        
+                        <div className="flex items-center gap-2 text-[10px] md:text-[11px] font-bold text-slate-400 mb-3 uppercase truncate italic">
+                           <span className="text-black truncate max-w-[60%]">{j.authors}</span>
+                           <span className="w-1 h-1 bg-slate-300 rounded-full flex-shrink-0"></span>
+                           <span className="flex-shrink-0">{j.year}</span>
+                        </div>
+                        
+                        {/* Box DOI yang interaktif dan bisa disalin */}
+                        <div 
+                          onClick={(e) => handleCopyDoi(e, j.id)}
+                          className="group/doi bg-slate-50 hover:bg-[#FDE047]/20 border border-black rounded-lg p-2 md:p-2.5 mb-3 flex items-center justify-between cursor-pointer transition-colors"
+                          title="Klik untuk menyalin DOI"
+                        >
+                           <span className="text-[10px] md:text-[11px] font-black text-slate-500 group-hover/doi:text-black truncate transition-colors">
+                             {j.id}
+                           </span>
+                           {copiedDoi === j.id ? (
+                             <Check size={14} className="text-green-600 flex-shrink-0 ml-2" />
+                           ) : (
+                             <Copy size={14} className="text-slate-400 group-hover/doi:text-black flex-shrink-0 ml-2 transition-colors" />
+                           )}
+                        </div>
+
+                        <button 
+                          onClick={() => handleAction(j)}
+                          className={`w-full border-2 border-black py-2.5 md:py-3 rounded-lg font-black uppercase text-[10px] md:text-[11px] flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] ${
+                            copiedId === j.id ? 'bg-green-400 text-black' : 'bg-[#FDE047] text-black hover:bg-yellow-300'
+                          }`}
+                        >
+                          {copiedId === j.id ? 'BERHASIL DISALIN!' : 'TARIK DATA'}
+                          <ExternalLink size={14} strokeWidth={3} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
-                
               </div>
             </div>
-          )}
-
-          {/* Promo Card: Skripsi Gen */}
-          <div className="neo-promo-card">
-            <h3 className="neo-promo-title">
-              <span role="img" aria-label="rocket">🚀</span> Cari Jurnal Makin Gampang!
-            </h3>
-            <p className="neo-promo-desc">
-              Kesulitan cari referensi yang pas? Gunakan AI untuk menemukan rekomendasi jurnal dan skripsi terbaik untuk penelitianmu.
-            </p>
-            <a 
-              href="https://skripsi-gen.vercel.app" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="neo-promo-btn"
-            >
-              <StarIcon /> Coba Skripsi Gen (Gratis)
-            </a>
           </div>
+        ))}
 
-          {/* Donation Card */}
-          <div className="neo-donation-card">
-            <h3 className="neo-donation-title">
-              <span role="img" aria-label="coffee">☕</span> Dukung pengembangan tool ini!
-            </h3>
-            <p className="neo-donation-desc">
-              Tool ini gratis & open-use. Donasi membantu pengembangan fitur baru dan perawatan server.
-            </p>
-            <a 
-              href="https://saweria.co/rickpipor" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="neo-donation-btn"
-            >
-              <PlayCircleIcon /> Donasi di Saweria
-            </a>
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bg-white border border-black p-2 md:p-3 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 md:gap-3">
+              <RefreshCw size={14} className="animate-spin text-black" />
+              <span className="font-black uppercase text-[9px] md:text-[11px] tracking-widest italic">AI Verifying Accuracy...</span>
+            </div>
           </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
-          {/* Spacer for bottom nav */}
-          <div style={{ height: '90px' }}></div>
+      {/* Input Ramping dan Link Instagram */}
+      <div className="p-3 md:p-5 bg-white border-t-2 border-black sticky bottom-0 z-10">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-2 md:gap-3">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder="TOPIK SPESIFIK JURNAL ID..."
+            className="flex-1 bg-white border-2 border-black rounded-xl p-3 md:p-4 font-black text-[12px] md:text-[14px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:bg-[#FDE047]/5 uppercase placeholder:text-slate-300 transition-colors"
+            disabled={isLoading}
+          />
+          <button 
+            type="submit" 
+            disabled={!inputValue.trim() || isLoading}
+            className="bg-[#FDE047] border-2 border-black p-3 md:p-4 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all active:shadow-none active:translate-x-[2px] active:translate-y-[2px] disabled:bg-slate-100 disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0 hover:bg-yellow-300"
+          >
+            <Send size={20} strokeWidth={3} className="text-black" />
+          </button>
+        </form>
+
+        {/* Link Instagram dengan SVG Custom */}
+        <div className="mt-3 flex justify-center items-center">
+          <a 
+            href="https://www.instagram.com/rickv4_?igsh=N3JqcG84NG9obnli&utm_source=qr" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="flex items-center gap-1.5 text-slate-400 hover:text-black transition-colors text-[10px] md:text-[11px] font-black uppercase tracking-widest"
+          >
+            <InstagramIcon size={14} strokeWidth={2.5} />
+            <span>@rickv4_</span>
+          </a>
         </div>
-      </section>
-
-      {/* Floating Bottom Navigation (Neo-brutalism Style) */}
-      <nav className="neo-bottom-nav">
-        <button className={`neo-nav-item ${inputMode === "doi" ? "active" : ""}`} onClick={() => setInputMode("doi")}>
-          <SearchIcon /> <span>DOI</span>
-        </button>
-        <button className={`neo-nav-item ${inputMode === "url" ? "active" : ""}`} onClick={() => setInputMode("url")}>
-          <LinkIcon /> <span>LINK</span>
-        </button>
-        <button className={`neo-nav-item ${inputMode === "batch" ? "active" : ""}`} onClick={() => setInputMode("batch")}>
-          <ListIcon /> <span>BATCH</span>
-        </button>
-        <button className={`neo-nav-item ${inputMode === "manual" ? "active" : ""}`} onClick={() => setInputMode("manual")}>
-          <EditIcon /> <span>MANUAL</span>
-        </button>
-      </nav>
-
-      {/* STYLES (NEOBRUTALISM CSS) */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap');
-
-        :root {
-          --c-dark: #1E253A;
-          --c-yellow: #FDE047;
-          --c-teal: #40C4AA;
-          --c-pink: #FF90E8;
-          --c-bg: #EEF2F6;
-          --c-border: #111111;
-          --c-white: #FFFFFF;
-        }
-
-        html, body, #root {
-          width: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          text-align: left !important;
-          background-color: var(--c-bg);
-        }
-
-        * {
-          box-sizing: border-box;
-          font-family: 'Plus Jakarta Sans', sans-serif;
-        }
-
-        .neo-app {
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-        }
-
-        /* HEADER - STICKY ADDED */
-        .neo-header {
-          background: var(--c-white);
-          padding: 1rem 1.5rem;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          border-bottom: 3px solid var(--c-border);
-          position: sticky;
-          top: 0;
-          z-index: 1000;
-        }
-
-        .neo-logo {
-          font-size: 1.5rem;
-          font-weight: 900;
-          letter-spacing: 4px;
-          color: var(--c-dark);
-          display: flex;
-          align-items: center;
-        }
-
-        .neo-logo-icon {
-          color: var(--c-teal);
-          display: flex;
-          align-items: center;
-          margin: 0 2px;
-        }
-
-        .neo-menu-btn {
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-        }
-
-        /* HERO SECTION */
-        .neo-hero {
-          background-color: var(--c-dark);
-          background-image: repeating-linear-gradient(
-            -45deg,
-            rgba(0, 0, 0, 0.1),
-            rgba(0, 0, 0, 0.1) 15px,
-            transparent 15px,
-            transparent 30px
-          );
-          padding: 4rem 1.5rem 5rem;
-          color: var(--c-white);
-          display: flex;
-          justify-content: center;
-          border-bottom: 3px solid var(--c-border);
-        }
-
-        .neo-hero-content {
-          max-width: 600px;
-          text-align: center;
-        }
-
-        .neo-badge {
-          display: inline-block;
-          border: 2px solid var(--c-teal);
-          color: var(--c-teal);
-          padding: 6px 16px;
-          border-radius: 100px;
-          font-size: 0.75rem;
-          font-weight: 800;
-          letter-spacing: 1px;
-          margin-bottom: 1.5rem;
-        }
-
-        .neo-hero h1 {
-          font-size: 2.25rem;
-          font-weight: 800;
-          line-height: 1.3;
-          margin-bottom: 1rem;
-        }
-
-        .neo-highlight {
-          color: var(--c-yellow);
-        }
-
-        .neo-hero p {
-          color: #A3B1C6;
-          font-size: 0.95rem;
-          line-height: 1.6;
-          margin-bottom: 2.5rem;
-        }
-
-        /* MAIN CONTENT AREA */
-        .neo-content-area {
-          background-color: var(--c-bg);
-          padding: 2.5rem 1rem;
-          flex: 1;
-        }
-
-        .neo-container {
-          width: 90%;
-          max-width: 600px;
-          margin: 0 auto;
-        }
-
-        /* NEOBRUTALISM CARD */
-        .neo-card {
-          background: var(--c-white);
-          border: 3px solid var(--c-border);
-          border-radius: 12px;
-          box-shadow: 6px 6px 0px var(--c-border);
-          margin-bottom: 2rem;
-          margin-right: 6px; 
-          overflow: hidden;
-        }
-
-        .neo-card-header {
-          background: var(--c-yellow);
-          border-bottom: 3px solid var(--c-border);
-          padding: 14px 16px;
-          font-weight: 800;
-          font-size: 0.85rem;
-          letter-spacing: 1px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        
-        .neo-bg-teal {
-          background: var(--c-teal);
-          color: var(--c-dark);
-        }
-
-        .neo-circle {
-          width: 12px; height: 12px;
-          border: 2px solid var(--c-border);
-          border-radius: 50%;
-          background: var(--c-white);
-        }
-
-        .neo-card-body {
-          padding: 1.5rem;
-        }
-
-        /* DONATION CARD */
-        .neo-donation-card {
-          background: var(--c-yellow);
-          border: 3px solid var(--c-border);
-          border-radius: 12px;
-          box-shadow: 6px 6px 0px var(--c-border);
-          padding: 1.5rem;
-          margin-bottom: 2rem;
-          margin-right: 6px; 
-        }
-
-        .neo-donation-title {
-          font-size: 1.25rem;
-          font-weight: 800;
-          color: var(--c-border);
-          margin: 0 0 0.5rem 0;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .neo-donation-desc {
-          font-size: 0.95rem;
-          color: #333;
-          line-height: 1.5;
-          margin-bottom: 1.5rem;
-          font-weight: 600;
-        }
-
-        .neo-donation-btn {
-          background: var(--c-dark);
-          color: var(--c-white);
-          border: 3px solid var(--c-border);
-          border-radius: 8px;
-          padding: 12px 20px;
-          font-weight: 800;
-          font-size: 0.95rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          text-decoration: none;
-          box-shadow: 4px 4px 0px var(--c-border);
-          transition: all 0.1s;
-        }
-
-        .neo-donation-btn:active {
-          transform: translate(4px, 4px);
-          box-shadow: 0px 0px 0px var(--c-border);
-        }
-
-        /* PROMO CARD */
-        .neo-promo-card {
-          background: var(--c-pink);
-          border: 3px solid var(--c-border);
-          border-radius: 12px;
-          box-shadow: 6px 6px 0px var(--c-border);
-          padding: 1.5rem;
-          margin-bottom: 2rem;
-          margin-right: 6px; 
-        }
-
-        .neo-promo-title {
-          font-size: 1.25rem;
-          font-weight: 800;
-          color: var(--c-border);
-          margin: 0 0 0.5rem 0;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .neo-promo-desc {
-          font-size: 0.95rem;
-          color: var(--c-dark);
-          line-height: 1.5;
-          margin-bottom: 1.5rem;
-          font-weight: 600;
-        }
-
-        .neo-promo-btn {
-          background: var(--c-white);
-          color: var(--c-dark);
-          border: 3px solid var(--c-border);
-          border-radius: 8px;
-          padding: 12px 20px;
-          font-weight: 800;
-          font-size: 0.95rem;
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          text-decoration: none;
-          box-shadow: 4px 4px 0px var(--c-border);
-          transition: all 0.1s;
-        }
-
-        .neo-promo-btn:active {
-          transform: translate(4px, 4px);
-          box-shadow: 0px 0px 0px var(--c-border);
-        }
-
-        /* FORMS */
-        .neo-form-group {
-          margin-bottom: 1.25rem;
-        }
-
-        .neo-label {
-          display: block;
-          font-size: 0.75rem;
-          font-weight: 800;
-          color: #555;
-          margin-bottom: 8px;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-        }
-
-        .neo-input {
-          width: 100%;
-          padding: 14px 16px;
-          font-size: 0.95rem;
-          font-weight: 600;
-          border: 2px solid var(--c-border);
-          border-radius: 8px;
-          background: var(--c-white);
-          box-shadow: 3px 3px 0px var(--c-border);
-          outline: none;
-          transition: all 0.2s ease;
-        }
-
-        .neo-input:focus {
-          transform: translate(-2px, -2px);
-          box-shadow: 5px 5px 0px var(--c-border);
-          background: #FAFAFA;
-        }
-
-        .neo-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 1rem;
-        }
-
-        .neo-span-2 {
-          grid-column: span 2;
-        }
-
-        /* BUTTONS */
-        .neo-btn-primary {
-          background: var(--c-yellow);
-          color: var(--c-border);
-          border: 2px solid var(--c-border);
-          border-radius: 8px;
-          padding: 14px 24px;
-          font-weight: 800;
-          font-size: 0.9rem;
-          letter-spacing: 1px;
-          box-shadow: 4px 4px 0px var(--c-border);
-          cursor: pointer;
-          transition: all 0.1s;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          text-transform: uppercase;
-        }
-
-        .neo-btn-primary:active:not(:disabled) {
-          transform: translate(4px, 4px);
-          box-shadow: 0px 0px 0px var(--c-border);
-        }
-
-        .neo-btn-primary:disabled {
-          background: #E5E7EB;
-          color: #9CA3AF;
-          cursor: not-allowed;
-        }
-
-        .neo-btn-large {
-          font-size: 1rem;
-          padding: 16px 32px;
-          border: 3px solid var(--c-border);
-          box-shadow: 6px 6px 0px var(--c-border);
-        }
-        
-        .neo-btn-large:active {
-          transform: translate(6px, 6px);
-        }
-
-        .neo-btn-secondary {
-          background: var(--c-white);
-          color: var(--c-border);
-          border: 2px solid var(--c-border);
-          border-radius: 6px;
-          padding: 8px 16px;
-          font-weight: 800;
-          font-size: 0.75rem;
-          box-shadow: 2px 2px 0px var(--c-border);
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          transition: all 0.1s;
-        }
-
-        .neo-btn-secondary:active {
-          transform: translate(2px, 2px);
-          box-shadow: 0px 0px 0px var(--c-border);
-        }
-
-        .neo-btn-sm { padding: 6px 12px; }
-        .neo-w-full { width: 100%; margin-top: 0.5rem; }
-        .neo-mt-4 { margin-top: 1.5rem; }
-        .neo-mb-3 { margin-bottom: 1rem; }
-
-        /* RESULTS AREA */
-        .neo-section-title {
-          font-size: 1.05rem;
-          font-weight: 800;
-          color: var(--c-dark);
-          margin: 0 0 1rem 0;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .neo-result-box {
-          border: 2px dashed var(--c-border);
-          border-radius: 8px;
-          overflow: hidden;
-          background: var(--c-white);
-        }
-
-        .neo-result-header {
-          background: var(--c-bg);
-          padding: 10px 14px;
-          border-bottom: 2px dashed var(--c-border);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-weight: 800;
-          font-size: 0.75rem;
-          color: var(--c-dark);
-        }
-
-        .neo-result-content {
-          padding: 14px;
-          font-size: 0.95rem;
-          line-height: 1.6;
-          color: var(--c-dark);
-        }
-
-        .neo-info-box {
-          background: var(--c-bg);
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 0.8rem;
-          color: #555;
-          text-align: center;
-          border: 2px solid var(--c-border);
-        }
-
-        .neo-error-box {
-          margin-top: 1.5rem;
-          padding: 12px;
-          background: #FECACA;
-          border: 2px solid var(--c-border);
-          border-radius: 8px;
-          color: #B91C1C;
-          font-weight: 700;
-          font-size: 0.85rem;
-          text-align: center;
-          box-shadow: 3px 3px 0px var(--c-border);
-        }
-
-        .neo-error-list {
-          padding: 12px;
-          background: #FEF2F2;
-          border: 2px dashed #B91C1C;
-          border-radius: 8px;
-          font-size: 0.85rem;
-          color: #B91C1C;
-        }
-        .neo-error-list ul { padding-left: 1rem; margin-top: 8px; margin-bottom: 0; }
-        .neo-error-list li { margin-bottom: 4px; }
-        .neo-truncate { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
-
-        /* BOTTOM NAVIGATION - DIRAMPINGKAN */
-        .neo-bottom-nav {
-          position: fixed;
-          bottom: 1.25rem;
-          left: 50%;
-          transform: translateX(-50%);
-          background: var(--c-white);
-          border: 3px solid var(--c-border);
-          border-radius: 100px;
-          display: flex;
-          padding: 4px;
-          gap: 4px;
-          z-index: 100;
-          width: 90%;
-          max-width: 450px;
-          box-shadow: 4px 4px 0px var(--c-border);
-        }
-
-        .neo-nav-item {
-          flex: 1;
-          padding: 8px 0;
-          border-radius: 100px;
-          border: 2px solid transparent;
-          background: transparent;
-          font-weight: 800;
-          font-size: 0.75rem; 
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          cursor: pointer;
-          color: #666;
-          transition: all 0.2s;
-        }
-
-        .neo-nav-item.active {
-          background: var(--c-dark);
-          color: var(--c-white);
-          border-color: var(--c-border);
-        }
-
-        /* UTILS & ANIMATIONS */
-        .neo-fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        
-        .neo-animate-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* RESPONSIVE */
-        @media (max-width: 600px) {
-          .neo-grid { grid-template-columns: 1fr; }
-          .neo-span-2 { grid-column: span 1; }
-          .neo-hero h1 { font-size: 1.75rem; }
-          .neo-nav-item span { display: none; }
-          .neo-nav-item.active span { display: inline-block; }
-          
-          .neo-card, .neo-donation-card, .neo-promo-card {
-             margin-right: 4px; 
-          }
-          .neo-truncate { max-width: 120px; }
-        }
-      `}</style>
+      </div>
     </div>
   );
 }
-
-
